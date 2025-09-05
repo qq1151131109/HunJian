@@ -1,0 +1,20 @@
+{
+  "name": "gamevideo",
+  "version": "1.0.0",
+  "description": "游戏视频混剪处理程序",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run server:dev\" \"npm run client:dev\"",
+    "client:dev": "cd client && npm run dev",
+    "server:dev": "cd server && npm run dev",
+    "client:build": "cd client && npm run build",
+    "server:build": "cd server && npm run build",
+    "install:all": "npm install && cd client && npm install && cd ../server && npm install"
+  },
+  "keywords": ["video", "editing", "ffmpeg", "automation"],
+  "author": "shenglin",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  }
+}
