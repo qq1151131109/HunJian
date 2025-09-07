@@ -22,7 +22,7 @@ const io = new Server(server, {
   }
 })
 
-const PORT = process.env.PORT || 9001
+const PORT = process.env.PORT || 8000
 
 // 中间件
 app.use(cors({

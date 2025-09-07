@@ -37,6 +37,41 @@ export class FFmpegService {
   }
 
   /**
+   * 获取音频文件时长（秒）
+   */
+  async getAudioDuration(inputPath: string): Promise<number> {
+    const metadata = await this.getVideoInfo(inputPath)
+    return metadata.format.duration || 0
+  }
+
+  /**
+   * 获取视频文件的音频时长（秒）
+   * 如果视频没有音频轨道，返回 0
+   */
+  async getVideoAudioDuration(inputPath: string): Promise<number> {
+    try {
+      const metadata = await this.getVideoInfo(inputPath)
+      
+      // 检查是否有音频流
+      const audioStreams = metadata.streams?.filter((stream: any) => stream.codec_type === 'audio')
+      
+      if (!audioStreams || audioStreams.length === 0) {
+        console.log(`视频 ${inputPath} 没有音频轨道`)
+        return 0
+      }
+
+      // 获取第一个音频流的时长
+      const audioDuration = audioStreams[0].duration || metadata.format.duration || 0
+      console.log(`视频 ${inputPath} 音频时长: ${audioDuration}秒`)
+      return audioDuration
+      
+    } catch (error) {
+      console.error(`获取视频音频时长失败: ${inputPath}`, error)
+      return 0
+    }
+  }
+
+  /**
    * 按指定时长裁切视频，返回所有片段路径
    */
   async cutVideoByDuration(inputPath: string, segmentDuration: number, outputDir: string): Promise<string[]> {
@@ -129,7 +164,7 @@ export class FFmpegService {
   /**
    * 为视频添加字幕
    */
-  async addSubtitleToVideo(videoPath: string, subtitlePath: string, outputPath: string): Promise<void> {
+  async addSubtitleToVideo(videoPath: string, subtitlePath: string, outputPath: string, styleId?: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const subtitleExt = path.extname(subtitlePath).toLowerCase()
       
@@ -137,7 +172,20 @@ export class FFmpegService {
       
       if (subtitleExt === '.srt' || subtitleExt === '.vtt') {
         // SRT/VTT 字幕，硬编码到视频中
-        subtitleFilter = `subtitles='${subtitlePath.replace(/'/g, "\\'")}':force_style='FontName=Arial,FontSize=24,PrimaryColour=&H00ffffff,OutlineColour=&H00000000,Outline=2'`
+        let forceStyle = 'FontName=Arial,FontSize=20,PrimaryColour=&H00ffffff,OutlineColour=&H00000000,Outline=2'
+        
+        // 如果提供了样式ID，使用自定义样式
+        if (styleId) {
+          try {
+            const { generateSubtitleForceStyle } = require('../../../shared/subtitleStyles')
+            forceStyle = generateSubtitleForceStyle(styleId)
+            console.log(`应用字幕样式 ${styleId}: ${forceStyle}`)
+          } catch (error) {
+            console.warn(`加载字幕样式失败，使用默认样式:`, error)
+          }
+        }
+        
+        subtitleFilter = `subtitles='${subtitlePath.replace(/'/g, "\\'")}':force_style='${forceStyle}'`
       } else if (subtitleExt === '.ass' || subtitleExt === '.ssa') {
         // ASS/SSA 字幕
         subtitleFilter = `ass='${subtitlePath.replace(/'/g, "\\'")}'`
@@ -173,10 +221,42 @@ export class FFmpegService {
   }
 
   /**
-   * 拼接多个视频
+   * 标准化视频格式，确保拼接兼容性 - TikTok竖屏格式
+   */
+  async normalizeVideo(inputPath: string, outputPath: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      ffmpeg(inputPath)
+        .videoCodec('libx264')
+        .audioCodec('aac')
+        .size('720x1280')   // TikTok竖屏格式 9:16
+        .fps(30)            // 标准化为30fps
+        .audioFrequency(44100) // 标准化音频采样率
+        .outputOptions([
+          '-preset fast',
+          '-crf 23',
+          '-pix_fmt yuv420p',
+          '-aspect 9:16',     // 确保宽高比
+          '-movflags +faststart',
+          '-avoid_negative_ts make_zero'
+        ])
+        .output(outputPath)
+        .on('end', () => {
+          console.log(`视频标准化完成(720x1280): ${outputPath}`)
+          resolve()
+        })
+        .on('error', (err) => {
+          console.error(`视频标准化失败: ${outputPath}`, err)
+          reject(err)
+        })
+        .run()
+    })
+  }
+
+  /**
+   * 拼接多个视频 - 先标准化再拼接
    */
   async concatenateVideos(videoPaths: string[], outputPath: string): Promise<void> {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       if (videoPaths.length === 0) {
         reject(new Error('没有视频文件需要拼接'))
         return
@@ -188,41 +268,81 @@ export class FFmpegService {
         return
       }
 
-      const command = ffmpeg()
+      try {
+        console.log(`开始标准化 ${videoPaths.length} 个视频...`)
+        
+        const tempDir = path.dirname(outputPath)
+        const normalizedPaths: string[] = []
+        
+        // 先标准化所有视频
+        for (let i = 0; i < videoPaths.length; i++) {
+          const normalizedPath = path.join(tempDir, `normalized_${i}_${Date.now()}.mp4`)
+          await this.normalizeVideo(videoPaths[i], normalizedPath)
+          normalizedPaths.push(normalizedPath)
+        }
 
-      // 添加所有输入文件
-      videoPaths.forEach(videoPath => {
-        command.input(videoPath)
-      })
+        console.log('视频标准化完成，开始拼接...')
 
-      // 构建复杂过滤器字符串
-      let filterComplex = ''
-      for (let i = 0; i < videoPaths.length; i++) {
-        filterComplex += `[${i}:v][${i}:a]`
+        // 使用 concat demuxer 方法拼接标准化后的视频
+        const listFile = path.join(tempDir, `concat_list_${Date.now()}.txt`)
+        const fileList = normalizedPaths.map(videoPath => `file '${videoPath}'`).join('\n')
+        await fs.writeFile(listFile, fileList)
+
+        const command = ffmpeg()
+          .input(listFile)
+          .inputOptions(['-f concat', '-safe 0'])
+          .outputOptions(['-c copy']) // 因为已经标准化，直接复制流
+          .output(outputPath)
+          .on('end', async () => {
+            // 清理临时文件
+            try {
+              await fs.remove(listFile)
+              for (const normalizedPath of normalizedPaths) {
+                await fs.remove(normalizedPath)
+              }
+            } catch (e) {
+              console.warn('清理临时文件失败:', e)
+            }
+            console.log(`视频拼接完成: ${outputPath}`)
+            resolve()
+          })
+          .on('error', async (err) => {
+            // 清理临时文件
+            try {
+              await fs.remove(listFile)
+              for (const normalizedPath of normalizedPaths) {
+                await fs.remove(normalizedPath)
+              }
+            } catch (e) {
+              console.warn('清理临时文件失败:', e)
+            }
+            console.error(`视频拼接失败: ${outputPath}`, err)
+            reject(err)
+          })
+          .run()
+
+      } catch (error) {
+        console.error('拼接视频时发生错误:', error)
+        reject(error)
       }
-      filterComplex += `concat=n=${videoPaths.length}:v=1:a=1[outv][outa]`
-
-      command
-        .complexFilter(filterComplex)
-        .outputOptions(['-map [outv]', '-map [outa]'])
-        .videoCodec('libx264')
-        .audioCodec('aac')
-        .outputOptions([
-          '-preset fast',
-          '-crf 23',
-          '-movflags +faststart'
-        ])
-        .output(outputPath)
-        .on('end', () => {
-          console.log(`视频拼接完成: ${outputPath}`)
-          resolve()
-        })
-        .on('error', (err) => {
-          console.error(`视频拼接失败: ${outputPath}`, err)
-          reject(err)
-        })
-        .run()
     })
+  }
+
+  /**
+   * 检查视频是否包含音频流
+   */
+  private async checkVideosForAudio(videoPaths: string[]): Promise<boolean[]> {
+    const promises = videoPaths.map(async (videoPath) => {
+      try {
+        const metadata = await this.getVideoInfo(videoPath)
+        const audioStreams = metadata.streams?.filter((stream: any) => stream.codec_type === 'audio')
+        return audioStreams && audioStreams.length > 0
+      } catch (error) {
+        console.error(`检查视频音频流失败: ${videoPath}`, error)
+        return false
+      }
+    })
+    return Promise.all(promises)
   }
 
   /**
@@ -247,6 +367,148 @@ export class FFmpegService {
         })
         .on('error', (err) => {
           console.error(`视频调整失败: ${outputPath}`, err)
+          reject(err)
+        })
+        .run()
+    })
+  }
+
+  /**
+   * 从视频中提取音频
+   */
+  async extractAudio(videoPath: string, outputPath: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      ffmpeg(videoPath)
+        .noVideo()
+        .audioCodec('libmp3lame')
+        .audioBitrate('192k')
+        .output(outputPath)
+        .on('end', () => {
+          console.log(`音频提取完成: ${outputPath}`)
+          resolve()
+        })
+        .on('error', (err) => {
+          console.error(`音频提取失败: ${outputPath}`, err)
+          reject(err)
+        })
+        .run()
+    })
+  }
+
+  /**
+   * 合并音频与视频
+   */
+  async mergeAudioWithVideo(videoPath: string, audioPath: string, outputPath: string, videoDuration?: number): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const command = ffmpeg()
+        .input(videoPath)
+        .input(audioPath)
+        .outputOptions([
+          '-c:v copy',
+          '-c:a aac',
+          '-map 0:v:0',
+          '-map 1:a:0',
+          '-shortest'
+        ])
+
+      if (videoDuration) {
+        command.duration(videoDuration)
+      }
+
+      command
+        .output(outputPath)
+        .on('end', () => {
+          console.log(`音频视频合并完成: ${outputPath}`)
+          resolve()
+        })
+        .on('error', (err) => {
+          console.error(`音频视频合并失败: ${outputPath}`, err)
+          reject(err)
+        })
+        .run()
+    })
+  }
+
+  /**
+   * 音频标准化处理
+   */
+  async normalizeAudio(inputPath: string, outputPath: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      ffmpeg(inputPath)
+        .audioCodec('libmp3lame')
+        .audioBitrate('192k')
+        .audioFrequency(44100)
+        .audioChannels(2)
+        .audioFilters(['loudnorm'])
+        .output(outputPath)
+        .on('end', () => {
+          console.log(`音频标准化完成: ${outputPath}`)
+          resolve()
+        })
+        .on('error', (err) => {
+          console.error(`音频标准化失败: ${outputPath}`, err)
+          reject(err)
+        })
+        .run()
+    })
+  }
+
+  /**
+   * 按时长裁切视频
+   */
+  async cutVideo(inputPath: string, outputPath: string, duration: number): Promise<void> {
+    return new Promise((resolve, reject) => {
+      ffmpeg(inputPath)
+        .duration(duration)
+        .videoCodec('libx264')
+        .audioCodec('aac')
+        .outputOptions([
+          '-preset fast',
+          '-crf 23',
+          '-movflags +faststart'
+        ])
+        .output(outputPath)
+        .on('end', () => {
+          console.log(`视频裁切完成: ${outputPath}`)
+          resolve()
+        })
+        .on('error', (err) => {
+          console.error(`视频裁切失败: ${outputPath}`, err)
+          reject(err)
+        })
+        .run()
+    })
+  }
+
+  /**
+   * 为视频添加字幕（别名方法）
+   */
+  async addSubtitles(videoPath: string, subtitlePath: string, outputPath: string, subtitleStyle?: any): Promise<void> {
+    const styleId = subtitleStyle?.styleId || subtitleStyle?.name || 'default'
+    return this.addSubtitleToVideo(videoPath, subtitlePath, outputPath, styleId)
+  }
+
+  /**
+   * 视频优化处理
+   */
+  async optimizeVideo(inputPath: string, outputPath: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      ffmpeg(inputPath)
+        .videoCodec('libx264')
+        .audioCodec('aac')
+        .outputOptions([
+          '-preset medium',
+          '-crf 23',
+          '-movflags +faststart',
+          '-pix_fmt yuv420p'
+        ])
+        .output(outputPath)
+        .on('end', () => {
+          console.log(`视频优化完成: ${outputPath}`)
+          resolve()
+        })
+        .on('error', (err) => {
+          console.error(`视频优化失败: ${outputPath}`, err)
           reject(err)
         })
         .run()

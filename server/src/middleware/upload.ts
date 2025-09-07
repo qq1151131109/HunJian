@@ -67,28 +67,46 @@ const storage = multer.diskStorage({
 
 // 文件类型过滤
 const fileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+  console.log(`文件上传检查: ${file.fieldname}, MIME: ${file.mimetype}, 文件名: ${file.originalname}`)
+  
+  // 通过文件扩展名判断文件类型（因为有些客户端不会正确设置MIME类型）
+  const ext = path.extname(file.originalname).toLowerCase()
+  
   if (file.fieldname === 'videos') {
     // 视频文件
-    if (file.mimetype.startsWith('video/')) {
+    const isVideoMime = file.mimetype.startsWith('video/')
+    const isVideoExt = ['.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.mkv'].includes(ext)
+    
+    if (isVideoMime || isVideoExt) {
       cb(null, true)
     } else {
+      console.log(`视频文件类型错误: MIME=${file.mimetype}, 扩展名=${ext}`)
       cb(new Error('只能上传视频文件'))
     }
   } else if (file.fieldname === 'audioFile') {
     // 音频文件
-    if (file.mimetype.startsWith('audio/')) {
+    const isAudioMime = file.mimetype.startsWith('audio/')
+    const isAudioExt = ['.mp3', '.wav', '.flac', '.aac', '.ogg', '.m4a'].includes(ext)
+    
+    if (isAudioMime || isAudioExt) {
       cb(null, true)
     } else {
+      console.log(`音频文件类型错误: MIME=${file.mimetype}, 扩展名=${ext}`)
       cb(new Error('只能上传音频文件'))
     }
   } else if (file.fieldname === 'trailerVideo') {
     // 引流视频
-    if (file.mimetype.startsWith('video/')) {
+    const isVideoMime = file.mimetype.startsWith('video/')
+    const isVideoExt = ['.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.mkv'].includes(ext)
+    
+    if (isVideoMime || isVideoExt) {
       cb(null, true)
     } else {
+      console.log(`引流视频类型错误: MIME=${file.mimetype}, 扩展名=${ext}`)
       cb(new Error('只能上传视频文件'))
     }
   } else {
+    console.log(`未知文件字段: ${file.fieldname}`)
     cb(null, true)
   }
 }

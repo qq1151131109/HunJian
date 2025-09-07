@@ -2,7 +2,8 @@ import { Server } from 'socket.io'
 import path from 'path'
 import fs from 'fs-extra'
 import { FFmpegService } from '../utils/ffmpeg'
-import type { ProcessStatus, ProcessResult } from '../types'
+import { WhisperService } from '../utils/whisper'
+import type { ProcessStatus, ProcessResult } from '../../../shared/types'
 
 interface ProcessingOptions {
   videos: Express.Multer.File[]
@@ -11,6 +12,7 @@ interface ProcessingOptions {
   config: {
     audioDuration: number
     subtitlePath: string
+    subtitleStyle: string
   }
 }
 
@@ -19,6 +21,7 @@ export class VideoProcessor {
   private io: Server
   private status: ProcessStatus
   private ffmpeg: FFmpegService
+  private whisper: WhisperService
   private isProcessing = false
   private shouldStop = false
 
@@ -26,6 +29,7 @@ export class VideoProcessor {
     this.processId = processId
     this.io = io
     this.ffmpeg = new FFmpegService()
+    this.whisper = new WhisperService()
     
     this.status = {
       id: processId,
@@ -38,6 +42,8 @@ export class VideoProcessor {
 
   async startProcessing(options: ProcessingOptions): Promise<void> {
     try {
+      console.log(`开始处理任务 ${this.processId}，视频文件数量: ${options.videos.length}`)
+      
       if (this.isProcessing) {
         throw new Error('任务正在处理中')
       }
@@ -54,6 +60,7 @@ export class VideoProcessor {
         progress: 0
       }
 
+      console.log('更新处理状态并保存:', this.status)
       await this.saveStatus()
       this.emitStatusUpdate()
 
@@ -63,18 +70,22 @@ export class VideoProcessor {
       const results: ProcessResult[] = []
 
       // 处理每个视频文件
+      console.log(`开始处理 ${options.videos.length} 个视频文件`)
       for (let i = 0; i < options.videos.length; i++) {
         if (this.shouldStop) {
+          console.log('处理被取消')
           break
         }
 
         const videoFile = options.videos[i]
+        console.log(`处理第 ${i + 1} 个文件: ${videoFile.originalname}`)
         const result = await this.processVideo(videoFile, options, outputDir, i)
         results.push(result)
 
         this.status.processedFiles++
         this.status.progress = (this.status.processedFiles / this.status.totalFiles) * 100
 
+        console.log(`文件处理完成，进度: ${this.status.progress}%`)
         await this.saveStatus()
         this.emitStatusUpdate()
         this.emitFileProcessed(result)
@@ -111,6 +122,10 @@ export class VideoProcessor {
   ): Promise<ProcessResult> {
     try {
       this.status.currentFile = videoFile.originalname
+      // 计算基础进度（每个文件开始时）
+      const baseProgress = (index / this.status.totalFiles) * 100
+      this.status.progress = baseProgress
+      this.status.currentStep = '准备处理视频文件'
       this.emitStatusUpdate()
 
       const inputPath = videoFile.path
@@ -123,10 +138,60 @@ export class VideoProcessor {
       const tempDir = path.join(outputDir, 'temp', `video_${index}`)
       await fs.ensureDir(tempDir)
 
-      // 步骤1: 获取视频信息并裁切
+      // 步骤1: 计算实际裁切时长
+      this.status.currentStep = '分析音频时长'
+      this.status.progress = baseProgress + (1 / this.status.totalFiles) * 10
+      this.emitStatusUpdate()
+      
+      let actualCutDuration: number
+
+      if (options.audioFile) {
+        // 有音频文件，使用音频时长
+        const mainAudioDuration = await this.ffmpeg.getAudioDuration(options.audioFile.path)
+        console.log(`主音频时长: ${mainAudioDuration}秒`)
+
+        let trailerAudioDuration = 0
+        if (options.trailerVideo) {
+          // 获取引流视频的音频时长
+          trailerAudioDuration = await this.ffmpeg.getVideoAudioDuration(options.trailerVideo.path)
+          console.log(`引流视频音频时长: ${trailerAudioDuration}秒`)
+        }
+
+        // 正确的裁切时长计算逻辑
+        if (options.trailerVideo && trailerAudioDuration > 0) {
+          // 引流视频有音频：裁切时长 = 音频时长（引流视频音频会和背景音频混合）
+          actualCutDuration = mainAudioDuration
+          console.log(`引流视频有音频，裁切时长 = 音频时长: ${actualCutDuration}秒`)
+        } else if (options.trailerVideo) {
+          // 引流视频无音频：裁切时长 = 音频时长 - 引流视频时长
+          const trailerVideoDuration = await this.ffmpeg.getVideoDuration(options.trailerVideo.path)
+          actualCutDuration = mainAudioDuration - trailerVideoDuration
+          console.log(`引流视频无音频，裁切时长 = ${mainAudioDuration} - ${trailerVideoDuration} = ${actualCutDuration}秒`)
+          
+          if (actualCutDuration <= 0) {
+            throw new Error(`引流视频时长(${trailerVideoDuration}秒) 大于等于主音频时长(${mainAudioDuration}秒)，无法处理`)
+          }
+        } else {
+          // 没有引流视频：直接使用音频时长
+          actualCutDuration = mainAudioDuration
+          console.log(`无引流视频，裁切时长 = 音频时长: ${actualCutDuration}秒`)
+        }
+
+        console.log(`计算出的裁切时长: ${actualCutDuration}秒`)
+      } else {
+        // 没有音频文件，使用预设时长作为后备
+        actualCutDuration = options.config.audioDuration
+        console.log(`使用预设裁切时长: ${actualCutDuration}秒`)
+      }
+
+      // 步骤2: 按计算出的时长裁切视频
+      this.status.currentStep = '裁切视频片段'
+      this.status.progress = baseProgress + (1 / this.status.totalFiles) * 20
+      this.emitStatusUpdate()
+      
       const segments = await this.ffmpeg.cutVideoByDuration(
         inputPath,
-        options.config.audioDuration,
+        actualCutDuration,
         tempDir
       )
 
@@ -136,44 +201,78 @@ export class VideoProcessor {
       for (let segIndex = 0; segIndex < segments.length; segIndex++) {
         const segment = segments[segIndex]
         let currentSegment = segment
+        const segmentBaseProgress = baseProgress + (1 / this.status.totalFiles) * 30 + ((segIndex / segments.length) * (1 / this.status.totalFiles) * 60)
 
-        // 步骤2: 添加音频（如果有）
+        // 步骤3: 添加音频（如果有）
         if (options.audioFile) {
+          this.status.currentStep = `为片段 ${segIndex + 1}/${segments.length} 添加音频`
+          this.status.progress = segmentBaseProgress
+          this.emitStatusUpdate()
+          
           const withAudioPath = path.join(tempDir, `segment_${segIndex}_with_audio.mp4`)
           await this.ffmpeg.addAudioToVideo(currentSegment, options.audioFile.path, withAudioPath)
           currentSegment = withAudioPath
         }
 
-        // 步骤3: 添加字幕（如果字幕目录存在）
-        if (await fs.pathExists(options.config.subtitlePath)) {
-          const subtitleFiles = await this.findSubtitleFiles(options.config.subtitlePath)
-          if (subtitleFiles.length > 0) {
-            // 随机选择一个字幕文件
-            const randomSubtitle = subtitleFiles[Math.floor(Math.random() * subtitleFiles.length)]
-            const withSubtitlePath = path.join(tempDir, `segment_${segIndex}_with_subtitle.mp4`)
-            await this.ffmpeg.addSubtitleToVideo(currentSegment, randomSubtitle, withSubtitlePath)
-            currentSegment = withSubtitlePath
-          }
+        // 步骤4: 使用Whisper自动生成字幕
+        this.status.currentStep = `为片段 ${segIndex + 1}/${segments.length} 生成字幕(Whisper)`
+        this.status.progress = segmentBaseProgress + ((1 / segments.length) * (1 / this.status.totalFiles) * 30)
+        this.emitStatusUpdate()
+        
+        try {
+          console.log(`使用Whisper为片段 ${segIndex} 生成字幕...`)
+          const subtitlePath = await this.whisper.generateSubtitleFromVideo(currentSegment, tempDir)
+          console.log(`Whisper字幕生成成功: ${subtitlePath}`)
+          
+          const withSubtitlePath = path.join(tempDir, `segment_${segIndex}_with_subtitle.mp4`)
+          await this.ffmpeg.addSubtitleToVideo(currentSegment, subtitlePath, withSubtitlePath, options.config.subtitleStyle)
+          currentSegment = withSubtitlePath
+          
+          // 清理生成的字幕文件
+          await fs.remove(subtitlePath)
+          
+        } catch (error) {
+          console.error(`Whisper字幕生成失败 (片段 ${segIndex}):`, error)
+          console.log(`跳过字幕处理，继续处理片段 ${segIndex}`)
+          // 字幕生成失败时继续处理，不添加字幕
         }
 
-        // 步骤4: 添加引流视频（如果有）
+        // 步骤5: 添加引流视频（如果有）
+        this.status.currentStep = `为片段 ${segIndex + 1}/${segments.length} 添加引流视频`
+        this.status.progress = segmentBaseProgress + ((1 / segments.length) * (1 / this.status.totalFiles) * 50)
+        this.emitStatusUpdate()
+        
         let finalPath: string
-        if (options.trailerVideo) {
-          finalPath = path.join(outputSubDir, `${baseName}_segment_${segIndex}_final.mp4`)
-          await this.ffmpeg.concatenateVideos([currentSegment, options.trailerVideo.path], finalPath)
-        } else {
-          finalPath = path.join(outputSubDir, `${baseName}_segment_${segIndex}_final.mp4`)
+        try {
+          if (options.trailerVideo) {
+            finalPath = path.join(outputSubDir, `${baseName}_segment_${segIndex}_final.mp4`)
+            await this.ffmpeg.concatenateVideos([currentSegment, options.trailerVideo.path], finalPath)
+          } else {
+            finalPath = path.join(outputSubDir, `${baseName}_segment_${segIndex}_final.mp4`)
+            await fs.copy(currentSegment, finalPath)
+          }
+          processedSegments.push(finalPath)
+          console.log(`片段 ${segIndex} 处理完成: ${finalPath}`)
+        } catch (error) {
+          console.error(`片段 ${segIndex} 拼接失败:`, error)
+          // 拼接失败时，使用没有引流视频的版本
+          finalPath = path.join(outputSubDir, `${baseName}_segment_${segIndex}_no_trailer.mp4`)
           await fs.copy(currentSegment, finalPath)
+          processedSegments.push(finalPath)
+          console.log(`片段 ${segIndex} 使用无引流版本: ${finalPath}`)
         }
-
-        processedSegments.push(finalPath)
       }
 
       // 清理临时文件
+      this.status.currentStep = `清理临时文件并完成处理`
+      this.status.progress = baseProgress + (1 / this.status.totalFiles) * 100
+      this.emitStatusUpdate()
+      
       await fs.remove(tempDir)
 
       return {
         id: `${this.processId}_${index}`,
+        processId: this.processId,
         originalFile: videoFile.originalname,
         outputFile: `处理完成，生成 ${processedSegments.length} 个片段`,
         status: 'success'
@@ -183,6 +282,7 @@ export class VideoProcessor {
       console.error(`处理视频 ${videoFile.originalname} 失败:`, error)
       return {
         id: `${this.processId}_${index}`,
+        processId: this.processId,
         originalFile: videoFile.originalname,
         outputFile: '',
         status: 'error',
@@ -242,6 +342,10 @@ export class VideoProcessor {
   }
 
   async stopProcessing(): Promise<void> {
+    this.shouldStop = true
+  }
+
+  async stop(): Promise<void> {
     this.shouldStop = true
   }
 
