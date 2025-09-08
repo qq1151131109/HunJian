@@ -73,7 +73,7 @@ router.get('/status/:processId', async (req, res) => {
 
     if (!processor) {
       // 尝试从文件系统读取状态
-      const statusPath = path.join(__dirname, '../../output', processId, 'status.json')
+      const statusPath = path.join(process.env.OUTPUT_DIR || './output', processId, 'status.json')
       if (await fs.pathExists(statusPath)) {
         const status = await fs.readJSON(statusPath)
         return res.json(status)
@@ -131,7 +131,7 @@ router.post('/stop/:processId', async (req, res) => {
 router.post('/open-folder/:processId', async (req, res) => {
   try {
     const { processId } = req.params
-    const outputDir = path.join(__dirname, '../../output', processId)
+    const outputDir = path.join(process.env.OUTPUT_DIR || './output', processId)
 
     if (!await fs.pathExists(outputDir)) {
       return res.status(404).json({
@@ -176,7 +176,7 @@ router.post('/open-folder/:processId', async (req, res) => {
 // 获取所有任务列表
 router.get('/list', async (req, res) => {
   try {
-    const outputDir = path.join(__dirname, '../../output')
+    const outputDir = process.env.OUTPUT_DIR || './output'
     
     if (!await fs.pathExists(outputDir)) {
       return res.json([])
@@ -233,13 +233,13 @@ router.delete('/delete/:processId', async (req, res) => {
     }
     
     // 删除输出目录和所有相关文件
-    const outputDir = path.join(__dirname, '../../output', processId)
+    const outputDir = path.join(process.env.OUTPUT_DIR || './output', processId)
     if (await fs.pathExists(outputDir)) {
       await fs.remove(outputDir)
     }
     
     // 清理上传目录中可能的临时文件（基于processId查找）
-    const uploadDir = path.join(__dirname, '../../uploads')
+    const uploadDir = process.env.UPLOAD_DIR || './uploads'
     if (await fs.pathExists(uploadDir)) {
       const files = await fs.readdir(uploadDir)
       const processFiles = files.filter(file => file.includes(processId))

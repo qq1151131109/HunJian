@@ -18,7 +18,7 @@ router.post('/', uploadFiles, async (req, res) => {
     }
 
     const processId = req.processId
-    const uploadPath = path.join(__dirname, '../../uploads', processId!)
+    const uploadPath = path.join(process.env.UPLOAD_DIR || './uploads', processId!)
 
     // 保存配置信息
     const configData = {
@@ -78,7 +78,7 @@ router.post('/', uploadFiles, async (req, res) => {
 router.get('/status/:processId', async (req, res) => {
   try {
     const { processId } = req.params
-    const configPath = path.join(__dirname, '../../uploads', processId, 'config.json')
+    const configPath = path.join(process.env.UPLOAD_DIR || './uploads', processId, 'config.json')
 
     if (!await fs.pathExists(configPath)) {
       return res.status(404).json({

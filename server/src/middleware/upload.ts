@@ -3,7 +3,7 @@ import path from 'path'
 import fs from 'fs-extra'
 import { v4 as uuidv4 } from 'uuid'
 
-const uploadDir = path.join(__dirname, '../../uploads')
+const uploadDir = process.env.UPLOAD_DIR || './uploads'
 
 // 确保上传目录存在
 fs.ensureDirSync(uploadDir)

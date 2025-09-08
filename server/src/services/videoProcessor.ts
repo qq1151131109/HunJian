@@ -64,7 +64,7 @@ export class VideoProcessor {
       await this.saveStatus()
       this.emitStatusUpdate()
 
-      const outputDir = path.join(__dirname, '../../output', this.processId)
+      const outputDir = path.join(process.env.OUTPUT_DIR || './output', this.processId)
       await fs.ensureDir(outputDir)
 
       const results: ProcessResult[] = []
@@ -321,7 +321,7 @@ export class VideoProcessor {
 
   private async saveStatus(): Promise<void> {
     try {
-      const statusPath = path.join(__dirname, '../../output', this.processId, 'status.json')
+      const statusPath = path.join(process.env.OUTPUT_DIR || './output', this.processId, 'status.json')
       await fs.ensureDir(path.dirname(statusPath))
       await fs.writeJSON(statusPath, this.status, { spaces: 2 })
     } catch (error) {

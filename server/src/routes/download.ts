@@ -9,7 +9,7 @@ const router = express.Router()
 router.get('/info/:processId', async (req, res) => {
   try {
     const { processId } = req.params
-    const outputDir = path.join(__dirname, '../../output', processId)
+    const outputDir = path.join(process.env.OUTPUT_DIR || './output', processId)
 
     if (!await fs.pathExists(outputDir)) {
       return res.status(404).json({
@@ -46,7 +46,7 @@ router.get('/info/:processId', async (req, res) => {
 router.get('/:processId', async (req, res) => {
   try {
     const { processId } = req.params
-    const outputDir = path.join(__dirname, '../../output', processId)
+    const outputDir = path.join(process.env.OUTPUT_DIR || './output', processId)
     const zipPath = path.join(outputDir, `${processId}_processed.zip`)
 
     if (!await fs.pathExists(zipPath)) {
@@ -75,7 +75,7 @@ router.get('/:processId', async (req, res) => {
 // 创建压缩包
 async function createZipArchive(processId: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    const outputDir = path.join(__dirname, '../../output', processId)
+    const outputDir = path.join(process.env.OUTPUT_DIR || './output', processId)
     const zipPath = path.join(outputDir, `${processId}_processed.zip`)
 
     const output = fs.createWriteStream(zipPath)

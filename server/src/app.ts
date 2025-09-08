@@ -34,15 +34,17 @@ app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 
 // 静态文件服务
-app.use('/static', express.static(path.join(__dirname, '../uploads')))
-app.use('/output', express.static(path.join(__dirname, '../output')))
+const uploadDir = process.env.UPLOAD_DIR || './uploads'
+const outputDir = process.env.OUTPUT_DIR || './output'
+app.use('/static', express.static(uploadDir))
+app.use('/output', express.static(outputDir))
 
 // 确保必要的目录存在
 const ensureDirectories = async () => {
   const dirs = [
-    path.join(__dirname, '../uploads'),
-    path.join(__dirname, '../output'),
-    path.join(__dirname, '../temp')
+    uploadDir,
+    outputDir,
+    './temp'
   ]
   
   for (const dir of dirs) {
@@ -106,8 +108,8 @@ const startServer = async () => {
     server.listen(PORT, () => {
       console.log(`🚀 服务器启动成功`)
       console.log(`📱 服务端口: http://localhost:${PORT}`)
-      console.log(`📁 上传目录: ${path.join(__dirname, '../uploads')}`)
-      console.log(`📁 输出目录: ${path.join(__dirname, '../output')}`)
+      console.log(`📁 上传目录: ${path.resolve(uploadDir)}`)
+      console.log(`📁 输出目录: ${path.resolve(outputDir)}`)
     })
   } catch (error) {
     console.error('服务器启动失败:', error)
