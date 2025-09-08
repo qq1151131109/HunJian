@@ -1,7 +1,12 @@
 @echo off
 chcp 65001 >nul
 
+REM 游戏视频混剪程序快速启动脚本
+REM 功能：自动检查并安装所有依赖，然后启动程序
+REM 依赖：Node.js, Python, FFmpeg
+
 echo 🎬 游戏视频混剪程序 启动中...
+echo ✨ 自动检查系统环境和依赖...
 
 REM 检查 Node.js
 node --version >nul 2>&1
@@ -11,11 +16,21 @@ if errorlevel 1 (
     exit /b 1
 )
 
+REM 检查 Python
+python --version >nul 2>&1
+if errorlevel 1 (
+    echo ❌ Python 未安装，请先安装 Python
+    pause
+    exit /b 1
+)
+
 REM 检查 FFmpeg
 ffmpeg -version >nul 2>&1
 if errorlevel 1 (
-    echo ⚠️  警告: FFmpeg 未安装，视频处理功能将无法使用
+    echo ❌ FFmpeg 未安装，视频处理功能将无法使用
     echo 请下载 FFmpeg 并添加到系统 PATH
+    pause
+    exit /b 1
 )
 
 REM 检查依赖是否已安装
@@ -36,6 +51,21 @@ if not exist "server\node_modules" (
     cd server
     npm install
     cd ..
+)
+
+REM 检查并安装 Python 依赖
+echo 🐍 检查Python依赖...
+python -c "import faster_whisper" >nul 2>&1
+if errorlevel 1 (
+    echo 📦 安装Python依赖 (faster-whisper)...
+    python -m pip install -r requirements.txt
+    if errorlevel 0 (
+        echo ✅ Python依赖安装成功
+    ) else (
+        echo ❌ Python依赖安装失败，字幕生成功能可能无法使用
+    )
+) else (
+    echo ✅ Python依赖已安装
 )
 
 REM 创建 .env 文件（如果不存在）

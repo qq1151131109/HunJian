@@ -49,14 +49,29 @@ cp .env.example server/.env
 
 ## 使用方法
 
-### 启动开发服务器
+### 启动程序
 
+**🚀 推荐方式（一键启动）:**
+```bash
+# Linux/macOS
+./start.sh
+
+# Windows
+start.bat
+```
+这些脚本会自动：
+- 检查系统依赖（Node.js, Python, FFmpeg）
+- 安装所有项目依赖（Node.js + Python）
+- 创建配置文件
+- 启动开发服务器
+
+**手动启动方式:**
 ```bash
 # 同时启动前后端
 npm run dev
 
 # 或分别启动
-npm run server:dev  # 后端: http://localhost:8001
+npm run server:dev  # 后端: http://localhost:8000
 npm run client:dev  # 前端: http://localhost:3000
 ```
 
