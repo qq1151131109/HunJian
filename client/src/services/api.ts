@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { DownloadInfo } from '../../shared/types'
+import type { DownloadInfo } from '../../../shared/types'
 
 const API_BASE_URL = '/api'
 
@@ -66,6 +66,21 @@ export const apiService = {
   // 检查服务器状态
   checkServerStatus: async () => {
     return axiosInstance.get('/health')
+  },
+
+  // 获取任务列表
+  getTaskList: async () => {
+    return axiosInstance.get('/process/list')
+  },
+
+  // 停止任务
+  stopTask: async (processId: string) => {
+    return axiosInstance.post(`/process/stop/${processId}`)
+  },
+
+  // 删除任务
+  deleteTask: async (processId: string) => {
+    return axiosInstance.delete(`/process/delete/${processId}`)
   }
 }
 

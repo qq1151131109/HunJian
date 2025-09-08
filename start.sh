@@ -42,7 +42,7 @@ fi
 
 echo "🚀 启动服务器..."
 echo "📱 前端地址: http://localhost:3000"
-echo "🔧 后端地址: http://localhost:8001"
+echo "🔧 后端地址: http://localhost:8000"
 echo ""
 echo "按 Ctrl+C 停止服务器"
 echo ""

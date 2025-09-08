@@ -13,6 +13,7 @@ export interface ProcessConfig {
   audioDuration: number; // 音频时长（秒）
   audioFile?: File; // 要添加的音频文件
   subtitlePath: string; // 字幕文件路径
+  subtitleStyle: string; // 字幕样式ID
   trailerVideo?: File; // 引流视频文件
 }
 
@@ -20,6 +21,7 @@ export interface ProcessStatus {
   id: string;
   status: 'pending' | 'processing' | 'completed' | 'error';
   currentFile?: string;
+  currentStep?: string;
   progress: number; // 0-100
   totalFiles: number;
   processedFiles: number;
@@ -28,6 +30,7 @@ export interface ProcessStatus {
 
 export interface ProcessResult {
   id: string;
+  processId: string;
   originalFile: string;
   outputFile: string;
   status: 'success' | 'error';

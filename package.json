@@ -11,10 +11,16 @@
     "server:build": "cd server && npm run build",
     "install:all": "npm install && cd client && npm install && cd ../server && npm install"
   },
-  "keywords": ["video", "editing", "ffmpeg", "automation"],
+  "keywords": [
+    "video",
+    "editing",
+    "ffmpeg",
+    "automation"
+  ],
   "author": "shenglin",
   "license": "MIT",
   "devDependencies": {
+    "@playwright/test": "^1.55.0",
     "concurrently": "^8.2.0"
   }
 }
