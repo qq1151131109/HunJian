@@ -6,6 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 这是一个游戏视频混剪处理程序，支持批量视频处理、音频添加、字幕嵌入和引流视频拼接。项目采用前后端分离架构，前端使用React + Ant Design，后端使用Node.js + Express + Socket.io，核心视频处理依赖FFmpeg。
 
+## 系统要求
+
+⚠️ **开始开发前，请先查看 [系统环境要求](./SYSTEM_REQUIREMENTS.md)**
+
+项目需要以下系统依赖：
+- Node.js >= 18.0
+- Python >= 3.8 
+- FFmpeg >= 4.0
+
 ## 核心开发命令
 
 ```bash

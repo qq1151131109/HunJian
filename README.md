@@ -14,41 +14,28 @@
 
 ## 系统要求
 
-- Node.js 18+
-- FFmpeg（视频处理核心）
-- 足够的磁盘空间用于临时文件
+⚠️ **重要**: 开始前请先运行环境检查脚本
+```bash
+./check-env.sh
+```
+
+必需依赖：
+- **Node.js** >= 18.0
+- **Python** >= 3.8
+- **FFmpeg** >= 4.0
+
+详细安装指南请查看 [SYSTEM_REQUIREMENTS.md](./SYSTEM_REQUIREMENTS.md)
 
 ## 安装步骤
 
 ### 1. 安装依赖
 
 ```bash
-# 安装所有依赖
+# 安装所有依赖（包括Node.js和Python依赖）
 npm run install:all
-
-# 或分别安装
-npm install
-cd client && npm install
-cd ../server && npm install
 ```
 
-### 2. 安装 FFmpeg
-
-**macOS:**
-```bash
-brew install ffmpeg
-```
-
-**Ubuntu/Debian:**
-```bash
-sudo apt update
-sudo apt install ffmpeg
-```
-
-**Windows:**
-下载 FFmpeg 并添加到系统 PATH
-
-### 3. 配置环境变量
+### 2. 配置环境变量
 
 复制并修改环境变量文件：
 ```bash
@@ -151,6 +138,7 @@ A: 调整处理批次大小，或增加系统内存
 - **前端**: React + TypeScript + Ant Design
 - **后端**: Node.js + Express + Socket.io
 - **视频处理**: FFmpeg + fluent-ffmpeg
+- **AI字幕**: faster-whisper
 - **文件处理**: Multer + fs-extra
 
 ## 开发者
