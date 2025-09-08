@@ -206,17 +206,7 @@ const CompactSubtitleSelector: React.FC<CompactSubtitleSelectorProps> = React.me
       </Row>
 
       <Row gutter={[12, 8]} style={{ marginTop: 8 }}>
-        <Col span={8}>
-          <Text style={{ fontSize: 12 }}>水平边距</Text>
-          <Slider
-            min={10}
-            max={100}
-            value={customSettings.marginHorizontal}
-            onChange={(value) => updateSettings({ marginHorizontal: value })}
-            tooltip={{ formatter: (value) => `${value}px` }}
-          />
-        </Col>
-        <Col span={8}>
+        <Col span={12}>
           <Text style={{ fontSize: 12 }}>描边</Text>
           <div style={{ marginTop: 4 }}>
             <Switch
@@ -235,7 +225,7 @@ const CompactSubtitleSelector: React.FC<CompactSubtitleSelectorProps> = React.me
             )}
           </div>
         </Col>
-        <Col span={8}>
+        <Col span={12}>
           <Text style={{ fontSize: 12 }}>颜色</Text>
           <div style={{ marginTop: 4 }}>
             <input

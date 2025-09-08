@@ -268,13 +268,8 @@ export class FFmpegService {
         console.log('应用垂直边距:', marginV)
       }
       
-      // 只有在用户明确设置了水平边距时才应用（避免影响居中）
-      if (marginHorizontal && marginHorizontal > 0) {
-        forceStyle += `,MarginL=${marginHorizontal},MarginR=${marginHorizontal}`
-        console.log('应用水平边距:', marginHorizontal)
-      } else {
-        console.log('保持水平居中，不设置边距')
-      }
+      // 强制水平居中：不设置任何水平边距
+      console.log('强制水平居中，不使用MarginL/MarginR')
       
       // 描边设置
       if (outline) {
@@ -305,25 +300,88 @@ export class FFmpegService {
       let subtitleFilter: string
       
       if (subtitleExt === '.srt' || subtitleExt === '.vtt') {
-        // SRT/VTT 字幕，统一使用前端面板显示的样式
+        // 直接测试最简单的居中方式
         if (customSettings) {
           try {
-            console.log('✅ 使用前端面板显示的字幕样式:', customSettings)
-            const forceStyle = this.generateCustomSubtitleStyle(customSettings)
-            subtitleFilter = `subtitles='${subtitlePath.replace(/'/g, "\\'")}':force_style='${forceStyle}'`
-            console.log(`✅ 应用字幕滤镜: ${subtitleFilter}`)
+            console.log('🎯 测试简单的force_style居中:', customSettings)
+            
+            // 最简化的ASS样式，只关注居中
+            const fontSize = customSettings.fontSize || 20
+            const color = customSettings.color || '#ffffff'
+            
+            // 颜色转换
+            const hexToAss = (hex: string) => {
+              if (!hex || !hex.startsWith('#')) return '&H00ffffff'
+              const r = hex.substring(1, 3)
+              const g = hex.substring(3, 5) 
+              const b = hex.substring(5, 7)
+              return `&H00${b}${g}${r}`
+            }
+            
+            // 位置到ASS对齐值的映射 - 确保水平居中，垂直位置可变
+            const positionToAlignment = (position: string) => {
+              switch (position) {
+                case 'top': return 8         // 顶部居中
+                case 'top-center': return 8  // 顶部居中
+                case 'center-up': return 8   // 中上部，使用顶部居中
+                case 'center': return 5      // 中部居中 
+                case 'center-down': return 2 // 中下部，使用底部居中
+                case 'bottom-center': return 2 // 底部居中
+                case 'bottom': return 2      // 底部居中
+                default: return 2            // 默认底部居中
+              }
+            }
+            
+            // 计算垂直边距
+            const getMarginV = (position: string, marginVertical: number | undefined) => {
+              const margin = marginVertical || 20
+              switch (position) {
+                case 'top':
+                case 'top-center':
+                case 'center-up':
+                  return margin  // 距离顶部
+                case 'bottom':
+                case 'bottom-center':
+                case 'center-down':
+                  return margin  // 距离底部
+                case 'center':
+                  return 0  // 正中不使用MarginV
+                default:
+                  return margin
+              }
+            }
+            
+            // 构建完整样式：水平居中 + 垂直位置可选
+            const position = customSettings.position || 'bottom'
+            const alignment = positionToAlignment(position)
+            const marginV = getMarginV(position, customSettings.marginVertical)
+            
+            let fullStyle = `FontSize=${fontSize},PrimaryColour=${hexToAss(color)},Alignment=${alignment}`
+            
+            // 设置垂直边距（如果需要）
+            if (marginV > 0) {
+              fullStyle += `,MarginV=${marginV}`
+            }
+            
+            // 添加描边（如果需要）
+            if (customSettings.outline) {
+              fullStyle += `,Outline=${customSettings.outlineWidth || 2},OutlineColour=&H00000000`
+            }
+            
+            // 关键：不设置MarginL/MarginR，确保水平居中
+            console.log('🎯 完整样式 (水平居中+垂直可选):', fullStyle)
+            console.log('🎯 位置映射:', position, '→ Alignment =', alignment, ', MarginV =', marginV)
+            
+            subtitleFilter = `subtitles='${subtitlePath.replace(/'/g, "\\'")}':force_style='${fullStyle}'`
+            console.log(`🎯 最终字幕滤镜: ${subtitleFilter}`)
+            
           } catch (error) {
-            console.error('❌ 处理字幕样式失败，使用基本样式:', error)
-            // 回退到基本样式
-            const fallbackStyle = 'FontName=Arial,FontSize=20,PrimaryColour=&H00ffffff,Alignment=2,MarginV=50,Outline=2,OutlineColour=&H00000000,Bold=1'
-            subtitleFilter = `subtitles='${subtitlePath.replace(/'/g, "\\'")}':force_style='${fallbackStyle}'`
-            console.log(`🔄 使用回退字幕样式: ${subtitleFilter}`)
+            console.error('❌ 处理字幕样式失败，使用最基本样式:', error)
+            subtitleFilter = `subtitles='${subtitlePath.replace(/'/g, "\\'")}'`
           }
         } else {
-          // 理论上不应该走到这里，因为前端总是会发送customSubtitleSettings
           console.warn('⚠️ 未收到前端字幕设置，使用默认样式')
-          const defaultStyle = 'FontName=Arial,FontSize=20,PrimaryColour=&H00ffffff,Alignment=2,MarginV=50,Outline=2,OutlineColour=&H00000000,Bold=1'
-          subtitleFilter = `subtitles='${subtitlePath.replace(/'/g, "\\'")}':force_style='${defaultStyle}'`
+          subtitleFilter = `subtitles='${subtitlePath.replace(/'/g, "\\'")}'`
         }
       } else if (subtitleExt === '.ass' || subtitleExt === '.ssa') {
         // ASS/SSA 字幕
@@ -333,7 +391,7 @@ export class FFmpegService {
         return
       }
 
-      ffmpeg(videoPath)
+      const ffmpegCommand = ffmpeg(videoPath)
         .videoFilters(subtitleFilter)
         .videoCodec('libx264')
         .audioCodec('copy') // 保持音频不变
@@ -343,19 +401,24 @@ export class FFmpegService {
           '-movflags +faststart'
         ])
         .output(outputPath)
+        .on('start', (commandLine) => {
+          console.log('🔍 完整的FFmpeg命令:')
+          console.log(commandLine)
+        })
         .on('end', () => {
-          console.log(`字幕添加完成: ${outputPath}`)
+          console.log(`✅ 字幕添加完成: ${outputPath}`)
           resolve()
         })
         .on('error', (err) => {
-          console.error(`字幕添加失败: ${outputPath}`, err)
+          console.error(`❌ 字幕添加失败: ${outputPath}`, err)
           // 如果字幕添加失败，尝试复制原视频
           fs.copy(videoPath, outputPath).then(() => {
             console.log('字幕添加失败，使用原视频')
             resolve()
           }).catch(reject)
         })
-        .run()
+      
+      ffmpegCommand.run()
     })
   }
 

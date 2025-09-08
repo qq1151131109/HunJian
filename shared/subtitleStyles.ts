@@ -43,7 +43,7 @@ export const subtitleStyles: SubtitleStyle[] = [
     position: 'bottom',
     alignment: 'center',
     marginVertical: 50,
-    marginHorizontal: 20,
+    marginHorizontal: 0,  // 强制水平居中
     bold: true,
     outline: true,
     outlineColor: '#000000',
@@ -157,7 +157,7 @@ export const subtitleStyles: SubtitleStyle[] = [
     position: 'top',
     alignment: 'center',
     marginVertical: 30,
-    marginHorizontal: 50,
+    marginHorizontal: 0,  // 强制水平居中
     bold: false,
     outline: true,
     outlineColor: '#666666',
@@ -343,10 +343,7 @@ export function generateSubtitleForceStyle(styleId: string): string {
     forceStyle += `,MarginV=${marginV}`
   }
 
-  // 设置水平边距（只有在明确设置时才应用，避免影响居中）
-  if (style.marginHorizontal && style.marginHorizontal > 0) {
-    forceStyle += `,MarginL=${style.marginHorizontal},MarginR=${style.marginHorizontal}`
-  }
+  // 强制水平居中：不设置任何水平边距，让ASS的Alignment生效
   
   if (style.outline) {
     forceStyle += `,Outline=${style.outlineWidth || 2}`
