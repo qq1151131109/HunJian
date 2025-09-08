@@ -44,6 +44,7 @@ function App() {
 
 
   const handleSubtitleChange = useCallback((styleId: string, settings: SubtitleSettings) => {
+    console.log('前端字幕设置更新:', { styleId, settings })
     setSelectedSubtitleStyle(styleId)
     setCustomSubtitleSettings(settings)
   }, [])
@@ -75,6 +76,7 @@ function App() {
         subtitleStyle: selectedSubtitleStyle,
         customSubtitleSettings: customSubtitleSettings
       }
+      console.log('前端发送的配置:', config)
       formData.append('config', JSON.stringify(config))
 
       setIsSubmitting(true)

@@ -54,7 +54,7 @@ const CompactSubtitleSelector: React.FC<CompactSubtitleSelectorProps> = React.me
       fontSize: 20,
       position: 'bottom' as const,
       marginVertical: 50,
-      marginHorizontal: 20,
+      marginHorizontal: 0,  // 默认不设置水平边距，保持居中
       color: '#ffffff',
       outline: true,
       outlineWidth: 2
@@ -66,17 +66,24 @@ const CompactSubtitleSelector: React.FC<CompactSubtitleSelectorProps> = React.me
     localStorage.setItem('subtitleSettings', JSON.stringify(customSettings))
   }, [customSettings])
 
+  // 组件首次挂载时主动调用onChange，确保自定义设置传递给父组件
+  useEffect(() => {
+    onChange(customSettings.styleId, customSettings)
+  }, []) // 空依赖数组，只在挂载时执行一次
+
   // 样式改变处理
   const handleStyleChange = (styleId: string) => {
     const style = subtitleStyles.find(s => s.id === styleId)
     if (style) {
       const newSettings: SubtitleSettings = {
-        ...customSettings,
         styleId,
-        fontSize: style.defaultSettings.fontSize || customSettings.fontSize,
-        color: style.defaultSettings.color || customSettings.color,
-        outline: style.defaultSettings.outline ?? customSettings.outline,
-        outlineWidth: style.defaultSettings.outlineWidth || customSettings.outlineWidth
+        fontSize: style.defaultSettings.fontSize || style.fontSize || customSettings.fontSize,
+        position: style.position || customSettings.position,  // 使用预设样式的位置
+        marginVertical: style.marginVertical || customSettings.marginVertical,  // 使用预设样式的边距
+        marginHorizontal: style.marginHorizontal || customSettings.marginHorizontal,
+        color: style.defaultSettings.color || style.color || customSettings.color,
+        outline: style.defaultSettings.outline ?? style.outline ?? customSettings.outline,
+        outlineWidth: style.defaultSettings.outlineWidth || style.outlineWidth || customSettings.outlineWidth
       }
       setCustomSettings(newSettings)
       onChange(styleId, newSettings)
@@ -87,7 +94,7 @@ const CompactSubtitleSelector: React.FC<CompactSubtitleSelectorProps> = React.me
   const updateSettings = (updates: Partial<SubtitleSettings>) => {
     const newSettings = { ...customSettings, ...updates }
     setCustomSettings(newSettings)
-    onChange(customSettings.styleId, newSettings)
+    onChange(newSettings.styleId, newSettings)
   }
 
   const selectedStyle = subtitleStyles.find(s => s.id === customSettings.styleId) || subtitleStyles[0]

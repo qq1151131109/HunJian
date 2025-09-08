@@ -13,6 +13,16 @@ interface ProcessingOptions {
     audioDuration: number
     subtitlePath: string
     subtitleStyle: string
+    customSubtitleSettings?: {
+      styleId: string
+      fontSize: number
+      position: 'top' | 'top-center' | 'center-up' | 'center' | 'center-down' | 'bottom-center' | 'bottom'
+      marginVertical: number
+      marginHorizontal: number
+      color: string
+      outline: boolean
+      outlineWidth: number
+    }
   }
 }
 
@@ -24,6 +34,7 @@ export class VideoProcessor {
   private whisper: WhisperService
   private isProcessing = false
   private shouldStop = false
+  private sharedSubtitlePath: string | null = null
 
   constructor(processId: string, io: Server) {
     this.processId = processId
@@ -43,6 +54,7 @@ export class VideoProcessor {
   async startProcessing(options: ProcessingOptions): Promise<void> {
     try {
       console.log(`开始处理任务 ${this.processId}，视频文件数量: ${options.videos.length}`)
+      console.log('处理器收到的配置:', JSON.stringify(options.config, null, 2))
       
       if (this.isProcessing) {
         throw new Error('任务正在处理中')
@@ -66,6 +78,26 @@ export class VideoProcessor {
 
       const outputDir = path.join(process.env.OUTPUT_DIR || './output', this.processId)
       await fs.ensureDir(outputDir)
+
+      // 如果有音频文件，提前生成一次字幕供所有视频复用
+      if (options.audioFile) {
+        this.status.currentStep = '生成共享字幕文件 (Whisper)'
+        this.status.progress = 5
+        this.emitStatusUpdate()
+        
+        try {
+          console.log('开始为音频文件生成共享字幕...')
+          const sharedSubtitleDir = path.join(outputDir, 'shared_subtitle')
+          await fs.ensureDir(sharedSubtitleDir)
+          
+          this.sharedSubtitlePath = await this.whisper.generateSubtitleFromAudio(options.audioFile.path, sharedSubtitleDir)
+          console.log(`共享字幕生成成功: ${this.sharedSubtitlePath}`)
+        } catch (error) {
+          console.error('共享字幕生成失败:', error)
+          console.log('将为每个片段单独生成字幕')
+          this.sharedSubtitlePath = null
+        }
+      }
 
       const results: ProcessResult[] = []
 
@@ -98,6 +130,18 @@ export class VideoProcessor {
       } else {
         this.status.status = 'error'
         this.status.error = '处理被用户取消'
+      }
+
+      // 清理共享字幕文件
+      if (this.sharedSubtitlePath) {
+        try {
+          const sharedSubtitleDir = path.dirname(this.sharedSubtitlePath)
+          await fs.remove(sharedSubtitleDir)
+          console.log('清理共享字幕目录完成')
+        } catch (error) {
+          console.warn('清理共享字幕目录失败:', error)
+        }
+        this.sharedSubtitlePath = null
       }
 
       await this.saveStatus()
@@ -214,27 +258,55 @@ export class VideoProcessor {
           currentSegment = withAudioPath
         }
 
-        // 步骤4: 使用Whisper自动生成字幕
-        this.status.currentStep = `为片段 ${segIndex + 1}/${segments.length} 生成字幕(Whisper)`
-        this.status.progress = segmentBaseProgress + ((1 / segments.length) * (1 / this.status.totalFiles) * 30)
-        this.emitStatusUpdate()
-        
-        try {
-          console.log(`使用Whisper为片段 ${segIndex} 生成字幕...`)
-          const subtitlePath = await this.whisper.generateSubtitleFromVideo(currentSegment, tempDir)
-          console.log(`Whisper字幕生成成功: ${subtitlePath}`)
+        // 步骤4: 添加字幕
+        if (this.sharedSubtitlePath) {
+          // 使用共享字幕
+          this.status.currentStep = `为片段 ${segIndex + 1}/${segments.length} 添加共享字幕`
+          this.status.progress = segmentBaseProgress + ((1 / segments.length) * (1 / this.status.totalFiles) * 30)
+          this.emitStatusUpdate()
           
-          const withSubtitlePath = path.join(tempDir, `segment_${segIndex}_with_subtitle.mp4`)
-          await this.ffmpeg.addSubtitleToVideo(currentSegment, subtitlePath, withSubtitlePath, options.config.subtitleStyle)
-          currentSegment = withSubtitlePath
+          try {
+            console.log(`使用共享字幕为片段 ${segIndex} 添加字幕...`)
+            const withSubtitlePath = path.join(tempDir, `segment_${segIndex}_with_subtitle.mp4`)
+            // 使用自定义设置或默认样式ID
+            console.log('字幕处理 - customSubtitleSettings:', options.config.customSubtitleSettings)
+            console.log('字幕处理 - subtitleStyle:', options.config.subtitleStyle)
+            const subtitleStyle = options.config.customSubtitleSettings ? 'custom' : options.config.subtitleStyle
+            console.log('最终使用的subtitleStyle:', subtitleStyle)
+            await this.ffmpeg.addSubtitleToVideo(currentSegment, this.sharedSubtitlePath, withSubtitlePath, subtitleStyle, options.config.customSubtitleSettings)
+            currentSegment = withSubtitlePath
+            console.log(`共享字幕添加成功: ${withSubtitlePath}`)
+          } catch (error) {
+            console.error(`共享字幕添加失败 (片段 ${segIndex}):`, error)
+            console.log(`跳过字幕处理，继续处理片段 ${segIndex}`)
+          }
+        } else if (options.audioFile) {
+          // 如果没有共享字幕但有音频文件，为该片段单独生成字幕
+          this.status.currentStep = `为片段 ${segIndex + 1}/${segments.length} 生成字幕(Whisper)`
+          this.status.progress = segmentBaseProgress + ((1 / segments.length) * (1 / this.status.totalFiles) * 30)
+          this.emitStatusUpdate()
           
-          // 清理生成的字幕文件
-          await fs.remove(subtitlePath)
-          
-        } catch (error) {
-          console.error(`Whisper字幕生成失败 (片段 ${segIndex}):`, error)
-          console.log(`跳过字幕处理，继续处理片段 ${segIndex}`)
-          // 字幕生成失败时继续处理，不添加字幕
+          try {
+            console.log(`使用Whisper为片段 ${segIndex} 生成字幕...`)
+            const subtitlePath = await this.whisper.generateSubtitleFromVideo(currentSegment, tempDir)
+            console.log(`Whisper字幕生成成功: ${subtitlePath}`)
+            
+            const withSubtitlePath = path.join(tempDir, `segment_${segIndex}_with_subtitle.mp4`)
+            // 使用自定义设置或默认样式ID
+            console.log('Whisper字幕处理 - customSubtitleSettings:', options.config.customSubtitleSettings)
+            console.log('Whisper字幕处理 - subtitleStyle:', options.config.subtitleStyle)
+            const subtitleStyle = options.config.customSubtitleSettings ? 'custom' : options.config.subtitleStyle
+            console.log('Whisper最终使用的subtitleStyle:', subtitleStyle)
+            await this.ffmpeg.addSubtitleToVideo(currentSegment, subtitlePath, withSubtitlePath, subtitleStyle, options.config.customSubtitleSettings)
+            currentSegment = withSubtitlePath
+            
+            // 清理生成的字幕文件
+            await fs.remove(subtitlePath)
+            
+          } catch (error) {
+            console.error(`Whisper字幕生成失败 (片段 ${segIndex}):`, error)
+            console.log(`跳过字幕处理，继续处理片段 ${segIndex}`)
+          }
         }
 
         // 步骤5: 添加引流视频（如果有）
@@ -330,7 +402,10 @@ export class VideoProcessor {
   }
 
   private emitStatusUpdate(): void {
+    // 发送到特定房间（为具体任务连接的客户端）
     this.io.to(`process-${this.processId}`).emit('progress-update', this.status)
+    // 发送全局消息（为任务管理器）
+    this.io.emit('task-status-update', this.status)
   }
 
   private emitFileProcessed(result: ProcessResult): void {

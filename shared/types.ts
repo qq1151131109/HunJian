@@ -14,6 +14,7 @@ export interface ProcessConfig {
   audioFile?: File; // 要添加的音频文件
   subtitlePath: string; // 字幕文件路径
   subtitleStyle: string; // 字幕样式ID
+  customSubtitleSettings?: any; // 自定义字幕设置
   trailerVideo?: File; // 引流视频文件
 }
 

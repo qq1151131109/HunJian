@@ -75,9 +75,12 @@ if not exist "server\.env" (
 )
 
 echo 🚀 启动服务器...
-echo 📱 前端地址: http://localhost:3000
-echo 🔧 后端地址: http://localhost:8000
 echo.
+echo ⚠️  注意：端口可能会根据系统可用性自动调整
+echo 📱 前端默认端口: 3000 (如被占用会自动递增到3001、3002...)
+echo 🔧 后端默认端口: 8000 (可通过环境变量PORT指定)
+echo.
+echo 🌐 启动完成后请查看终端输出中显示的实际访问地址
 echo 按 Ctrl+C 停止服务器
 echo.
 

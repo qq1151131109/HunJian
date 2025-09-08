@@ -33,6 +33,9 @@ router.post('/start', uploadFiles, async (req, res) => {
     const processConfig = JSON.parse(config || '{}')
 
     // 准备处理参数
+    console.log('接收到的processConfig:', processConfig)
+    console.log('customSubtitleSettings:', processConfig.customSubtitleSettings)
+    
     const processingOptions = {
       videos: files.videos,
       audioFile: files.audioFile?.[0],
@@ -40,9 +43,12 @@ router.post('/start', uploadFiles, async (req, res) => {
       config: {
         audioDuration: processConfig.audioDuration || 30,
         subtitlePath: processConfig.subtitlePath || process.env.SUBTITLE_PATH || '',
-        subtitleStyle: processConfig.subtitleStyle || 'tiktok-classic'
+        subtitleStyle: processConfig.subtitleStyle || 'tiktok-classic',
+        customSubtitleSettings: processConfig.customSubtitleSettings
       }
     }
+    
+    console.log('最终处理选项:', JSON.stringify(processingOptions.config, null, 2))
 
     // 异步开始处理
     processor.startProcessing(processingOptions).catch(error => {

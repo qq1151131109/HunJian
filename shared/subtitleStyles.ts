@@ -203,18 +203,28 @@ export function generateSubtitleFilter(style: SubtitleStyle): string {
 
 // 获取字体文件路径，使用项目内置字体确保跨平台一致性
 function getFontPath(fontFamily: string): string {
-  // 默认使用当前目录，这个函数主要在服务器端使用
-  const projectRoot = '.'
+  // 检查运行环境
+  const isNode = typeof process !== 'undefined' && process.versions && process.versions.node
   
-  const fontMap: Record<string, string> = {
-    'Roboto Bold': `${projectRoot}/fonts/Roboto-Bold.ttf`,
-    'Roboto': `${projectRoot}/fonts/Roboto-Regular.ttf`,
-    'Open Sans Bold': `${projectRoot}/fonts/OpenSans-Bold.ttf`,
-    'Impact': `${projectRoot}/fonts/Impact.ttf`,
-    'Source Sans Pro Bold': `${projectRoot}/fonts/SourceSansPro-Bold.ttf`
+  if (isNode) {
+    // Node.js 环境 - 服务端
+    const path = require('path')
+    // 修正路径：指向仓库根目录的fonts文件夹
+    const projectRoot = path.resolve(__dirname, '../..')  // 从shared目录上两级到根目录
+    
+    const fontMap: Record<string, string> = {
+      'Roboto Bold': `${projectRoot}/fonts/Roboto-Bold.ttf`,
+      'Roboto': `${projectRoot}/fonts/Roboto-Regular.ttf`,
+      'Open Sans Bold': `${projectRoot}/fonts/OpenSans-Bold.ttf`,
+      'Impact': `${projectRoot}/fonts/Impact.ttf`,
+      'Source Sans Pro Bold': `${projectRoot}/fonts/SourceSansPro-Bold.ttf`
+    }
+    
+    return fontMap[fontFamily] || `${projectRoot}/fonts/Roboto-Regular.ttf`
+  } else {
+    // 浏览器环境 - 前端
+    return fontFamily || 'Arial'
   }
-  
-  return fontMap[fontFamily] || `${projectRoot}/fonts/Roboto-Regular.ttf`
 }
 
 // 计算字幕位置坐标
@@ -276,7 +286,9 @@ export function generateSubtitleForceStyle(styleId: string): string {
     return 'FontName=Arial,FontSize=20,PrimaryColour=&H00ffffff,OutlineColour=&H00000000,Outline=2'
   }
 
-  let forceStyle = `FontName=${style.fontFamily.replace(' Bold', '')}`
+  // 对于 FFmpeg 的 force_style，直接使用字体文件路径
+  const fontPath = getFontPath(style.fontFamily)
+  let forceStyle = `FontFile=${fontPath}`
   forceStyle += `,FontSize=${style.fontSize}`
   
   // 颜色转换：从 #RRGGBB 转换为 &H00BBGGRR
@@ -288,6 +300,53 @@ export function generateSubtitleForceStyle(styleId: string): string {
   }
   
   forceStyle += `,PrimaryColour=${hexToAss(style.color)}`
+  
+  // 位置到ASS对齐值的映射
+  const positionToAlignment = (position: string) => {
+    switch (position) {
+      case 'top': return 8         // 顶部居中
+      case 'top-center': return 8  // 顶部居中
+      case 'center-up': return 8   // 中上部，使用顶部居中
+      case 'center': return 5      // 中部居中 
+      case 'center-down': return 2 // 中下部，使用底部居中
+      case 'bottom-center': return 2 // 底部居中
+      case 'bottom': return 2      // 底部居中
+      default: return 2            // 默认底部居中
+    }
+  }
+
+  // 设置对齐方式
+  const alignment = positionToAlignment(style.position)
+  forceStyle += `,Alignment=${alignment}`
+
+  // 计算垂直边距
+  const getMarginV = (position: string, marginVertical: number) => {
+    switch (position) {
+      case 'top':
+      case 'top-center':
+      case 'center-up':
+        return marginVertical  // 距离顶部
+      case 'bottom':
+      case 'bottom-center':
+      case 'center-down':
+        return marginVertical  // 距离底部
+      case 'center':
+        return 0  // 正中不使用MarginV
+      default:
+        return marginVertical
+    }
+  }
+
+  // 设置垂直边距
+  const marginV = getMarginV(style.position, style.marginVertical)
+  if (marginV > 0) {
+    forceStyle += `,MarginV=${marginV}`
+  }
+
+  // 设置水平边距（只有在明确设置时才应用，避免影响居中）
+  if (style.marginHorizontal && style.marginHorizontal > 0) {
+    forceStyle += `,MarginL=${style.marginHorizontal},MarginR=${style.marginHorizontal}`
+  }
   
   if (style.outline) {
     forceStyle += `,Outline=${style.outlineWidth || 2}`

@@ -88,10 +88,21 @@ export class FFmpegService {
 
       // 生成每个片段
       for (let i = 0; i < numSegments; i++) {
-        const startTime = i * segmentDuration
+        // 对所有片段都添加0.2秒的偏移，避免黑帧问题
+        const baseStartTime = i * segmentDuration
+        const offset = 0.2 // 统一的小偏移，避免黑帧
+        const startTime = baseStartTime + offset
+        const actualDuration = segmentDuration - offset
+        
+        // 确保不会超出视频总时长
+        if (startTime + actualDuration > totalDuration) {
+          console.log(`跳过片段 ${i}：起始时间 ${startTime}s + 时长 ${actualDuration}s 超出总时长 ${totalDuration}s`)
+          continue
+        }
+        
         const outputPath = path.join(outputDir, `segment_${i}.mp4`)
         
-        await this.cutVideoSegment(inputPath, startTime, segmentDuration, outputPath)
+        await this.cutVideoSegment(inputPath, startTime, actualDuration, outputPath)
         segments.push(outputPath)
       }
 
@@ -108,8 +119,13 @@ export class FFmpegService {
    * 裁切单个视频片段
    */
   private async cutVideoSegment(inputPath: string, startTime: number, duration: number, outputPath: string): Promise<void> {
+    console.log(`切割视频片段: 起始时间=${startTime}s, 时长=${duration}s`)
     return new Promise((resolve, reject) => {
       ffmpeg(inputPath)
+        .inputOptions([
+          '-accurate_seek',  // 精确定位
+          '-avoid_negative_ts', 'make_zero'  // 避免负时间戳
+        ])
         .seekInput(startTime)
         .duration(duration)
         .videoCodec('libx264')
@@ -117,7 +133,13 @@ export class FFmpegService {
         .outputOptions([
           '-preset fast',
           '-crf 23',
-          '-movflags +faststart'
+          '-movflags +faststart',
+          // 确保从关键帧开始编码，减少黑帧
+          '-sc_threshold 0',
+          // 强制关键帧间隔
+          '-g 30',
+          // 像素格式兼容性
+          '-pix_fmt yuv420p'
         ])
         .output(outputPath)
         .on('end', () => {
@@ -162,30 +184,147 @@ export class FFmpegService {
   }
 
   /**
+   * 根据前端自定义设置生成ASS force_style参数
+   */
+  private generateCustomSubtitleStyle(settings: any): string {
+    try {
+      console.log('处理自定义字幕设置:', JSON.stringify(settings, null, 2))
+      
+      // 参数验证
+      if (!settings || typeof settings !== 'object') {
+        throw new Error('Invalid settings object')
+      }
+      
+      // 颜色转换：从 #RRGGBB 转换为 &H00BBGGRR
+      const hexToAss = (hex: string) => {
+        if (!hex || !hex.startsWith('#')) return '&H00ffffff'
+        const r = hex.substring(1, 3)
+        const g = hex.substring(3, 5) 
+        const b = hex.substring(5, 7)
+        return `&H00${b}${g}${r}`
+      }
+
+      // 位置到ASS对齐值的正确映射
+      // ASS Alignment: 1=左下 2=中下 3=右下 4=左中 5=中中 6=右中 7=左上 8=中上 9=右上
+      const positionToAlignment = (position: string) => {
+        console.log('映射位置:', position)
+        switch (position) {
+          case 'top': return 8         // 顶部居中
+          case 'top-center': return 8  // 顶部居中
+          case 'center-up': return 8   // 中上部，使用顶部居中
+          case 'center': return 5      // 中部居中 
+          case 'center-down': return 2 // 中下部，使用底部居中
+          case 'bottom-center': return 2 // 底部居中
+          case 'bottom': return 2      // 底部居中
+          default: return 2            // 默认底部居中
+        }
+      }
+
+      // 计算垂直边距 - ASS中MarginV的正确用法
+      const getMarginV = (position: string, marginVertical: number | undefined) => {
+        console.log('计算边距 - 位置:', position, '边距:', marginVertical)
+        const margin = marginVertical || 20
+        
+        // ASS的MarginV表示距离视频边缘的像素距离
+        switch (position) {
+          case 'top':
+          case 'top-center':
+          case 'center-up':
+            return margin  // 距离顶部
+          case 'bottom':
+          case 'bottom-center':
+          case 'center-down':
+            return margin  // 距离底部
+          case 'center':
+            return 0  // 正中不使用MarginV
+          default:
+            return margin
+        }
+      }
+
+      // 生成ASS样式
+      const fontSize = settings.fontSize || 20
+      const color = settings.color || '#ffffff'
+      const position = settings.position || 'bottom'
+      const marginVertical = settings.marginVertical
+      const marginHorizontal = settings.marginHorizontal || 0  // 默认不设置水平边距，让居中自然生效
+      const outline = settings.outline !== false  // 默认启用描边
+      const outlineWidth = settings.outlineWidth || 2
+      
+      console.log('字幕样式参数:', { fontSize, color, position, marginVertical, marginHorizontal, outline, outlineWidth })
+      
+      // 基础样式：字体和颜色
+      let forceStyle = `FontName=Arial,FontSize=${fontSize},PrimaryColour=${hexToAss(color)},Bold=1`
+      
+      // 设置对齐方式 - 确保居中
+      const alignment = positionToAlignment(position)
+      forceStyle += `,Alignment=${alignment}`
+      console.log('使用对齐值:', alignment)
+      
+      // 设置垂直边距
+      const marginV = getMarginV(position, marginVertical)
+      if (marginV > 0) {
+        forceStyle += `,MarginV=${marginV}`
+        console.log('应用垂直边距:', marginV)
+      }
+      
+      // 只有在用户明确设置了水平边距时才应用（避免影响居中）
+      if (marginHorizontal && marginHorizontal > 0) {
+        forceStyle += `,MarginL=${marginHorizontal},MarginR=${marginHorizontal}`
+        console.log('应用水平边距:', marginHorizontal)
+      } else {
+        console.log('保持水平居中，不设置边距')
+      }
+      
+      // 描边设置
+      if (outline) {
+        forceStyle += `,Outline=${outlineWidth}`
+        forceStyle += `,OutlineColour=&H00000000`
+        console.log('应用描边:', outlineWidth)
+      } else {
+        forceStyle += `,Outline=0`
+        console.log('禁用描边')
+      }
+      
+      console.log('✅ 生成的ASS force_style:', forceStyle)
+      return forceStyle
+      
+    } catch (error) {
+      console.error('❌ generateCustomSubtitleStyle 执行失败:', error)
+      throw error  // 重新抛出错误以便上层处理
+    }
+  }
+
+  /**
    * 为视频添加字幕
    */
-  async addSubtitleToVideo(videoPath: string, subtitlePath: string, outputPath: string, styleId?: string): Promise<void> {
+  async addSubtitleToVideo(videoPath: string, subtitlePath: string, outputPath: string, styleId?: string, customSettings?: any): Promise<void> {
     return new Promise((resolve, reject) => {
       const subtitleExt = path.extname(subtitlePath).toLowerCase()
       
       let subtitleFilter: string
       
       if (subtitleExt === '.srt' || subtitleExt === '.vtt') {
-        // SRT/VTT 字幕，硬编码到视频中
-        let forceStyle = 'FontName=Arial,FontSize=20,PrimaryColour=&H00ffffff,OutlineColour=&H00000000,Outline=2'
-        
-        // 如果提供了样式ID，使用自定义样式
-        if (styleId) {
+        // SRT/VTT 字幕，统一使用前端面板显示的样式
+        if (customSettings) {
           try {
-            const { generateSubtitleForceStyle } = require('../../../shared/subtitleStyles')
-            forceStyle = generateSubtitleForceStyle(styleId)
-            console.log(`应用字幕样式 ${styleId}: ${forceStyle}`)
+            console.log('✅ 使用前端面板显示的字幕样式:', customSettings)
+            const forceStyle = this.generateCustomSubtitleStyle(customSettings)
+            subtitleFilter = `subtitles='${subtitlePath.replace(/'/g, "\\'")}':force_style='${forceStyle}'`
+            console.log(`✅ 应用字幕滤镜: ${subtitleFilter}`)
           } catch (error) {
-            console.warn(`加载字幕样式失败，使用默认样式:`, error)
+            console.error('❌ 处理字幕样式失败，使用基本样式:', error)
+            // 回退到基本样式
+            const fallbackStyle = 'FontName=Arial,FontSize=20,PrimaryColour=&H00ffffff,Alignment=2,MarginV=50,Outline=2,OutlineColour=&H00000000,Bold=1'
+            subtitleFilter = `subtitles='${subtitlePath.replace(/'/g, "\\'")}':force_style='${fallbackStyle}'`
+            console.log(`🔄 使用回退字幕样式: ${subtitleFilter}`)
           }
+        } else {
+          // 理论上不应该走到这里，因为前端总是会发送customSubtitleSettings
+          console.warn('⚠️ 未收到前端字幕设置，使用默认样式')
+          const defaultStyle = 'FontName=Arial,FontSize=20,PrimaryColour=&H00ffffff,Alignment=2,MarginV=50,Outline=2,OutlineColour=&H00000000,Bold=1'
+          subtitleFilter = `subtitles='${subtitlePath.replace(/'/g, "\\'")}':force_style='${defaultStyle}'`
         }
-        
-        subtitleFilter = `subtitles='${subtitlePath.replace(/'/g, "\\'")}':force_style='${forceStyle}'`
       } else if (subtitleExt === '.ass' || subtitleExt === '.ssa') {
         // ASS/SSA 字幕
         subtitleFilter = `ass='${subtitlePath.replace(/'/g, "\\'")}'`
@@ -228,16 +367,19 @@ export class FFmpegService {
       ffmpeg(inputPath)
         .videoCodec('libx264')
         .audioCodec('aac')
-        .size('720x1280')   // TikTok竖屏格式 9:16
         .fps(30)            // 标准化为30fps
         .audioFrequency(44100) // 标准化音频采样率
         .outputOptions([
           '-preset fast',
           '-crf 23',
           '-pix_fmt yuv420p',
-          '-aspect 9:16',     // 确保宽高比
           '-movflags +faststart',
-          '-avoid_negative_ts make_zero'
+          '-avoid_negative_ts make_zero',
+          // 智能缩放到720x1280，保持宽高比，用黑边填充
+          `-vf scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2:black`,
+          // 确保关键帧设置
+          '-g 30',
+          '-keyint_min 30'
         ])
         .output(outputPath)
         .on('end', () => {
@@ -285,8 +427,17 @@ export class FFmpegService {
 
         // 使用 concat demuxer 方法拼接标准化后的视频
         const listFile = path.join(tempDir, `concat_list_${Date.now()}.txt`)
-        const fileList = normalizedPaths.map(videoPath => `file '${videoPath}'`).join('\n')
+        // 确保目录存在
+        await fs.ensureDir(tempDir)
+        // 使用相对于列表文件的相对路径
+        const fileList = normalizedPaths.map(videoPath => {
+          const relativePath = path.relative(tempDir, videoPath)
+          return `file '${relativePath}'`
+        }).join('\n')
         await fs.writeFile(listFile, fileList)
+        
+        console.log(`创建拼接列表文件: ${listFile}`)
+        console.log(`文件内容:\n${fileList}`)
 
         const command = ffmpeg()
           .input(listFile)
@@ -307,6 +458,24 @@ export class FFmpegService {
             resolve()
           })
           .on('error', async (err) => {
+            // 检查文件是否存在
+            try {
+              const listExists = await fs.pathExists(listFile)
+              console.error(`拼接列表文件是否存在: ${listExists}`)
+              if (listExists) {
+                const content = await fs.readFile(listFile, 'utf8')
+                console.error(`拼接列表文件内容:\n${content}`)
+              }
+              
+              // 检查每个输入文件是否存在
+              for (let i = 0; i < normalizedPaths.length; i++) {
+                const exists = await fs.pathExists(normalizedPaths[i])
+                console.error(`标准化文件 ${i} (${normalizedPaths[i]}) 是否存在: ${exists}`)
+              }
+            } catch (checkErr) {
+              console.error('检查文件状态失败:', checkErr)
+            }
+            
             // 清理临时文件
             try {
               await fs.remove(listFile)

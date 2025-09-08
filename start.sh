@@ -65,8 +65,8 @@ if [ ! -f "server/.env" ]; then
 fi
 
 echo "🚀 启动服务器..."
-echo "📱 前端地址: http://localhost:3000"
-echo "🔧 后端地址: http://localhost:8000"
+echo "📱 前端地址将在下方显示 (自动检测可用端口)"
+echo "🔧 后端地址将在下方显示 (从环境配置读取)"
 echo ""
 echo "按 Ctrl+C 停止服务器"
 echo ""

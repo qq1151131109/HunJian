@@ -194,13 +194,28 @@ const TaskManager: React.FC<TaskManagerProps> = ({ onSelectTask, currentTaskId }
     const newSocket = io()
     setSocket(newSocket)
     
-    // 监听所有进度更新
-    newSocket.on('progress-update', (status: ProcessStatus) => {
-      setTasks(prev => prev.map(task => 
-        task.id === status.id 
-          ? { ...task, ...status }
-          : task
-      ))
+    // 监听任务状态更新（全局消息）
+    newSocket.on('task-status-update', (status: ProcessStatus) => {
+      console.log('收到任务状态更新:', status)
+      setTasks(prev => {
+        const existingTask = prev.find(task => task.id === status.id)
+        if (existingTask) {
+          // 更新现有任务
+          return prev.map(task => 
+            task.id === status.id 
+              ? { ...task, ...status }
+              : task
+          )
+        } else {
+          // 添加新任务
+          const newTask: Task = {
+            ...status,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          }
+          return [newTask, ...prev]
+        }
+      })
     })
 
     return () => {
