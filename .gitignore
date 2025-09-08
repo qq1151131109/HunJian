@@ -1,0 +1,67 @@
+# 依赖文件
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 构建输出
+dist/
+build/
+.next/
+out/
+
+# 环境变量
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE 文件
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 操作系统文件
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# 临时文件
+*.tmp
+*.temp
+.cache/
+
+# 日志文件
+*.log
+logs/
+
+# 项目特定文件
+server/uploads/
+server/output/
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.zip
+
+# Vite 临时文件
+client/node_modules/.vite/deps_temp_*/
+
+# 字幕文件（除了示例）
+subtitles/
+!subtitles/README.md
+
+# 测试覆盖率
+coverage/
+.nyc_output/
+
+# 运行时文件
+*.pid
+*.seed
+*.pid.lock

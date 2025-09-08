@@ -25,7 +25,7 @@ const ProcessConfig: React.FC<ProcessConfigProps> = ({ files, onConfigComplete }
       const config: ProcessConfigType = {
         audioDuration: values.audioDuration,
         audioFile: audioFileList[0]?.originFileObj,
-        subtitlePath: '/Users/shenglin/Library/Mobile Documents/com~apple~CloudDocs/code/游戏混剪/remotion-subtitles',
+        subtitlePath: './subtitles',  // 使用相对路径
         trailerVideo: trailerFileList[0]?.originFileObj
       }
 
@@ -155,7 +155,7 @@ const ProcessConfig: React.FC<ProcessConfigProps> = ({ files, onConfigComplete }
           <div style={{ marginBottom: '16px' }}>
             <Text strong>字幕文件路径：</Text>
             <br />
-            <Text code>/Users/shenglin/Library/Mobile Documents/com~apple~CloudDocs/code/游戏混剪/remotion-subtitles</Text>
+            <Text code>./subtitles (相对于项目根目录)</Text>
           </div>
 
           <div style={{ marginBottom: '24px' }}>

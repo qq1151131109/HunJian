@@ -184,13 +184,9 @@ const CompactSubtitleSelector: React.FC<CompactSubtitleSelectorProps> = React.me
             onChange={(value) => updateSettings({ position: value })}
             style={{ width: '100%' }}
           >
-            <Option value="top">顶部</Option>
-            <Option value="top-center">顶部居中</Option>
-            <Option value="center-up">中上部</Option>
-            <Option value="center">中部</Option>
-            <Option value="center-down">中下部</Option>
-            <Option value="bottom-center">底部居中</Option>
-            <Option value="bottom">底部</Option>
+            <Option value="top">顶部居中</Option>
+            <Option value="center">中部居中</Option>
+            <Option value="bottom">底部居中</Option>
           </Select>
         </Col>
         <Col span={8}>
@@ -244,10 +240,13 @@ const CompactSubtitleSelector: React.FC<CompactSubtitleSelectorProps> = React.me
         </Col>
       </Row>
 
-      {/* 样式描述 */}
+      {/* 样式描述 - 动态反映当前实际设置 */}
       <div style={{ marginTop: 12, padding: 8, background: '#f5f5f5', borderRadius: 4 }}>
         <Text style={{ fontSize: 11, color: '#666' }}>
-          {selectedStyle.description}
+          {`${customSettings.fontSize}px字体，${customSettings.color}颜色，${
+            customSettings.position === 'top' ? '顶部' : 
+            customSettings.position === 'center' ? '中部' : '底部'
+          }居中${customSettings.outline ? '，描边效果' : ''}`}
         </Text>
       </div>
     </Card>
