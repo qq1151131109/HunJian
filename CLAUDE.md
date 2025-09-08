@@ -16,8 +16,11 @@ npm run dev
 npm run server:dev  # 后端: http://localhost:8002
 npm run client:dev  # 前端: http://localhost:3000
 
-# 安装所有依赖
+# 安装所有依赖（包括Node.js和Python依赖）
 npm run install:all
+
+# 如果需要单独安装Python依赖
+python3 -m pip install -r requirements.txt
 
 # 构建项目
 npm run client:build
